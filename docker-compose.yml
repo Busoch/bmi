@@ -1,0 +1,51 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:15
+    env_file:
+      - .env
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./bmiserver
+      dockerfile: Dockerfile.backend
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+    expose:
+      - "8000"
+    volumes:
+      - static_volume:/app/staticfiles
+    command: >
+      sh -c "/wait-for-db.sh db &&
+             python manage.py migrate &&
+             python manage.py collectstatic --noinput &&
+             gunicorn bmiserver.wsgi:application --bind 0.0.0.0:8000"
+
+  frontend:
+    build:
+      context: ./bmi-frontend
+      dockerfile: Dockerfile.frontend
+    depends_on:
+      - backend
+    ports:
+      - "80:80"
+    volumes:
+      - static_volume:/app/staticfiles
+    networks:
+      - default
+
+volumes:
+  postgres_data:
+  static_volume:
